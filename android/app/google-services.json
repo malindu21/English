@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "247246484945",
+    "firebase_url": "https://brightspeak-e95eb-default-rtdb.firebaseio.com",
+    "project_id": "brightspeak-e95eb",
+    "storage_bucket": "brightspeak-e95eb.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:247246484945:android:9816ab5f9f1d102a279cf0",
+        "android_client_info": {
+          "package_name": "com.example.student_management"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAsm_Kfy0YE7NrvHanEZ4i9fC1maib45As"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
