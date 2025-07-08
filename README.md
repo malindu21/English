@@ -1,6 +1,6 @@
 # student_management
 
-A new Flutter project.
+Web portal.
 
 ## Getting Started
 
