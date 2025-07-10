@@ -102264,7 +102264,7 @@ a=a!=null?""+a.a+":"+B.e.q1(B.b.k(a.b),2,"0"):null
 a0=m.ay
 a0=a0!=null?A.aHz(1000*a0.a+a0.b):null
 s=7
-return A.T(m.e.J(0,A.av(["name",i,"age",h,"school",g,"grade",f,"contact1",e,"contact2",d,"address",c,"classDay",b,"classTime",a,"joinedDate",a0,"studentImage",m.CW,"source",k,"createdAt",A.aHz(1000*Date.now())],t.N,t.X)),$async$AI)
+return A.T(m.e.J(0,A.av(["name",i,"age",h,"school",g,"grade",f,"contact1",e,"contact2",d,"address",c,"classDay",b,"classTime",a,"joinedDate",a0,"studentImage",m.CW,"source",k,"isVerified",!1,"createdAt",A.aHz(1000*Date.now())],t.N,t.X)),$async$AI)
 case 7:m.c.al(t.Pu).f.qs(A.wV(null,null,null,B.hI,B.eP,B.S,null,A.c8(B.Rm,B.y,B.q,B.r,0,null),null,B.oP,null,null,null,null,null,null,new A.cO(A.aS(10),B.u),null,null))
 a0=m.c
 a0.toString
