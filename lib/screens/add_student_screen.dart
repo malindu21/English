@@ -304,6 +304,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
             _joinedDate != null ? Timestamp.fromDate(_joinedDate!) : null,
         'studentImage': _imageBase64,
         'source': sourceData,
+        'isVerified': false,
         'createdAt': Timestamp.now(),
       });
 
