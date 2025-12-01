@@ -18,6 +18,8 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
   final _formKey = GlobalKey<FormState>();
   final CollectionReference _studentsCollection = FirebaseFirestore.instance
       .collection('students');
+  final CollectionReference _schoolsCollection = FirebaseFirestore.instance
+      .collection('schools');
 
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _ageController = TextEditingController();
@@ -67,11 +69,15 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
   // Add loading state
   bool _isLoading = false;
   bool _isInitialLoading = true;
+  bool _isSchoolLoading = false;
 
   String? _contact1ValidationMessage;
   String? _contact2ValidationMessage;
   bool _isContact1Valid = true;
   bool _isContact2Valid = true;
+
+  List<String> _schoolOptions = [];
+  static const String _addNewSchoolValue = '__add_new_school__';
 
   @override
   void initState() {
@@ -81,6 +87,166 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     // Add listeners for real-time validation
     _contact1Controller.addListener(_validateContact1);
     _contact2Controller.addListener(_validateContact2);
+  }
+
+  Future<void> _loadSchools() async {
+    setState(() {
+      _isSchoolLoading = true;
+    });
+
+    try {
+      final snapshot =
+          await _schoolsCollection.orderBy('name', descending: false).get();
+      final Map<String, String> normalized = {};
+      for (final doc in snapshot.docs) {
+        final rawName =
+            (doc.data() as Map<String, dynamic>)['name']
+                ?.toString()
+                .trim();
+        if (rawName == null || rawName.isEmpty) continue;
+        normalized[rawName.toLowerCase()] = rawName;
+      }
+      final names = normalized.values.toList()
+        ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+
+      if (mounted) {
+        setState(() {
+          _schoolOptions = names;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.error, color: Colors.white),
+                const SizedBox(width: 8),
+                Expanded(child: Text('Error loading schools: $e')),
+              ],
+            ),
+            backgroundColor: Colors.red[600],
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSchoolLoading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _addNewSchool(String name) async {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: const [
+              Icon(Icons.info, color: Colors.white),
+              SizedBox(width: 8),
+              Expanded(child: Text('School name cannot be empty')),
+            ],
+          ),
+          backgroundColor: Colors.orange[700],
+        ),
+      );
+      return;
+    }
+
+    final exists = _schoolOptions.any(
+      (s) => s.toLowerCase() == trimmed.toLowerCase(),
+    );
+    if (exists) {
+      setState(() => _schoolController.text = trimmed);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: const [
+              Icon(Icons.info, color: Colors.white),
+              SizedBox(width: 8),
+              Expanded(child: Text('School already exists, selected it')),
+            ],
+          ),
+          backgroundColor: Colors.blue[700],
+        ),
+      );
+      return;
+    }
+
+    try {
+      await _schoolsCollection.add({
+        'name': trimmed,
+        'createdAt': Timestamp.now(),
+      });
+
+      setState(() {
+        _schoolOptions = [..._schoolOptions, trimmed]
+          ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+        _schoolController.text = trimmed;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: const [
+              Icon(Icons.check_circle, color: Colors.white),
+              SizedBox(width: 8),
+              Expanded(child: Text('School added')),
+            ],
+          ),
+          backgroundColor: Colors.green[700],
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.error, color: Colors.white),
+              const SizedBox(width: 8),
+              Expanded(child: Text('Error adding school: $e')),
+            ],
+          ),
+          backgroundColor: Colors.red[700],
+        ),
+      );
+    }
+  }
+
+  Future<void> _promptAddSchool() async {
+    final controller = TextEditingController(text: _schoolController.text);
+    final result = await showDialog<String>(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Add School'),
+            content: TextField(
+              controller: controller,
+              autofocus: true,
+              decoration: const InputDecoration(
+                labelText: 'School name',
+                hintText: 'Enter school name',
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Cancel'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(controller.text),
+                child: const Text('Save'),
+              ),
+            ],
+          ),
+    );
+
+    if (result != null) {
+      await _addNewSchool(result);
+    }
   }
 
   // Contact 1 validation method
@@ -134,7 +300,10 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
 
   Future<void> _initializeScreen() async {
     // Simulate loading delay (remove this in production or replace with actual initialization)
-    await Future.delayed(const Duration(seconds: 2));
+    await Future.wait([
+      _loadSchools(),
+      Future.delayed(const Duration(seconds: 2)),
+    ]);
 
     // Add any actual initialization code here
     // For example: loading user preferences, checking permissions, etc.
@@ -290,7 +459,10 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
       await _studentsCollection.add({
         'name': _nameController.text.trim(),
         'age': int.tryParse(_ageController.text.trim()) ?? 0,
-        'school': _schoolController.text.trim(),
+        'school':
+            _schoolController.text.trim().isNotEmpty
+                ? _schoolController.text.trim()
+                : null,
         'grade': _gradeController.text.trim(),
         'contact1': _contact1Controller.text.trim(),
         'contact2': _contact2Controller.text.trim(),
@@ -370,11 +542,6 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     int? age = int.tryParse(_ageController.text.trim());
     if (age == null || age < 1 || age > 150) {
       return 'Please enter a valid age between 1 and 150';
-    }
-
-    // Check if school is empty
-    if (_schoolController.text.trim().isEmpty) {
-      return 'School name is required';
     }
 
     // Check if grade is empty
@@ -792,12 +959,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
                                   isNumber: true,
                                   isRequired: true,
                                 ),
-                                _buildTextField(
-                                  _schoolController,
-                                  'Current School',
-                                  Icons.school_outlined,
-                                  isRequired: true,
-                                ),
+                                _buildSchoolDropdown(),
                                 _buildTextField(
                                   _gradeController,
                                   'Grade/Class',
@@ -1229,6 +1391,89 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
             ),
           ],
         ],
+      ),
+    );
+  }
+
+  Widget _buildSchoolDropdown() {
+    final currentValue =
+        _schoolOptions.contains(_schoolController.text)
+            ? _schoolController.text
+            : null;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      child: DropdownButtonFormField<String>(
+        value: currentValue,
+        isExpanded: true,
+        decoration: InputDecoration(
+          labelText: 'Current School (Optional)',
+          prefixIcon: Icon(Icons.school_outlined, color: primaryGold),
+          suffixIcon:
+              _isSchoolLoading
+                  ? Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: primaryGold,
+                      ),
+                    ),
+                  )
+                  : null,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(15),
+            borderSide: BorderSide(color: Colors.grey.shade300),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(15),
+            borderSide: BorderSide(color: Colors.grey.shade300),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(15),
+            borderSide: const BorderSide(color: primaryGold, width: 2),
+          ),
+          filled: true,
+          fillColor: Colors.grey.shade50,
+          labelStyle: TextStyle(color: deepBlue.withOpacity(0.8)),
+        ),
+        hint: Text(
+          _isSchoolLoading
+              ? 'Loading schools...'
+              : 'Select a school or add a new one',
+        ),
+        items: [
+          ..._schoolOptions.map(
+            (school) => DropdownMenuItem<String>(
+              value: school,
+              child: Text(school),
+            ),
+          ),
+          DropdownMenuItem<String>(
+            value: _addNewSchoolValue,
+            child: Row(
+              children: const [
+                Icon(Icons.add, size: 18),
+                SizedBox(width: 8),
+                Text('Add new school'),
+              ],
+            ),
+          ),
+        ],
+        onChanged:
+            _isSchoolLoading
+                ? null
+                : (value) async {
+                  if (value == null) {
+                    setState(() => _schoolController.clear());
+                  } else if (value == _addNewSchoolValue) {
+                    await _promptAddSchool();
+                  } else {
+                    setState(() => _schoolController.text = value);
+                  }
+                },
       ),
     );
   }

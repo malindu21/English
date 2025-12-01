@@ -14,6 +14,8 @@ class DashboardScreen extends StatefulWidget {
 class _DashboardScreenState extends State<DashboardScreen> {
   final CollectionReference _studentsCollection = FirebaseFirestore.instance
       .collection('students');
+  final CollectionReference _schoolsCollection = FirebaseFirestore.instance
+      .collection('schools');
   final TextEditingController _searchController = TextEditingController();
   int _selectedIndex = 0;
 
@@ -71,6 +73,147 @@ class _DashboardScreenState extends State<DashboardScreen> {
         Colors.red,
         Icons.error,
       );
+    }
+  }
+
+  Future<void> _showEditSchoolDialog() async {
+    if (_selectedSchool == null || _selectedSchool == 'All') {
+      _showSnackBar(
+        'Please select a school to edit',
+        Colors.orange,
+        Icons.info,
+      );
+      return;
+    }
+
+    final controller = TextEditingController(text: _selectedSchool);
+    final newName = await showDialog<String>(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Edit School Name'),
+            content: TextField(
+              controller: controller,
+              decoration: const InputDecoration(
+                labelText: 'New school name',
+                hintText: 'Enter new name',
+              ),
+              autofocus: true,
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Cancel'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(controller.text),
+                child: const Text('Save'),
+              ),
+            ],
+          ),
+    );
+
+    if (newName == null) return;
+    final trimmed = newName.trim();
+    if (trimmed.isEmpty || trimmed == _selectedSchool) {
+      if (trimmed.isEmpty) {
+        _showSnackBar(
+          'School name cannot be empty',
+          Colors.red,
+          Icons.error,
+        );
+      }
+      return;
+    }
+
+    await _updateSchoolName(trimmed);
+  }
+
+  Future<void> _updateSchoolName(String newName) async {
+    final previousName = _selectedSchool;
+    if (previousName == null || previousName == 'All') return;
+
+    try {
+      setState(() => _isLoading = true);
+      final query =
+          await _studentsCollection.where('school', isEqualTo: previousName)
+              .get();
+      final batch = FirebaseFirestore.instance.batch();
+      for (final doc in query.docs) {
+        batch.update(doc.reference, {'school': newName});
+      }
+      await batch.commit();
+      setState(() => _selectedSchool = newName);
+
+      await _fetchDropdownOptions();
+
+      _showSnackBar(
+        'School name updated',
+        Colors.green,
+        Icons.check_circle,
+      );
+    } catch (e) {
+      _showSnackBar('Error updating school name: $e', Colors.red, Icons.error);
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _syncSchoolsFromStudents() async {
+    try {
+      setState(() => _isLoading = true);
+
+      final studentsSnapshot = await _studentsCollection.get();
+      final schoolNames =
+          studentsSnapshot.docs
+              .map(
+                (doc) =>
+                    (doc.data() as Map<String, dynamic>)['school']
+                        ?.toString()
+                        .trim(),
+              )
+              .whereType<String>()
+              .where((name) => name.isNotEmpty && name != 'All')
+              .toSet();
+
+      final existingSnapshot =
+          await _schoolsCollection.orderBy('name', descending: false).get();
+      final existingLower =
+          existingSnapshot.docs
+              .map(
+                (doc) =>
+                    ((doc.data() as Map<String, dynamic>)['name']
+                        ?.toString()
+                        .trim() ??
+                    '')
+                        .toLowerCase(),
+              )
+              .toSet();
+
+      final newSchools =
+          schoolNames
+              .where((name) => !existingLower.contains(name.toLowerCase()))
+              .toList();
+
+      for (final name in newSchools) {
+        await _schoolsCollection.add({
+          'name': name,
+          'createdAt': Timestamp.now(),
+        });
+      }
+
+      await _fetchDropdownOptions();
+      _showSnackBar(
+        newSchools.isEmpty
+            ? 'Schools are already synced'
+            : 'Added ${newSchools.length} new school(s)',
+        Colors.green,
+        Icons.sync,
+      );
+    } catch (e) {
+      _showSnackBar('Error syncing schools: $e', Colors.red, Icons.error);
+    } finally {
+      setState(() => _isLoading = false);
     }
   }
 
@@ -628,32 +771,55 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 padding: const EdgeInsets.all(16),
                 child: Column(
                   children: [
-                    DropdownButtonFormField<String>(
-                      value: _selectedSchool,
-                      decoration: InputDecoration(
-                        labelText: 'School',
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide(color: Colors.blue[800]!),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: DropdownButtonFormField<String>(
+                            value: _selectedSchool,
+                            decoration: InputDecoration(
+                              labelText: 'School',
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: BorderSide(color: Colors.blue[800]!),
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: BorderSide(color: Colors.blue[200]!),
+                              ),
+                              filled: true,
+                              fillColor: Colors.white,
+                            ),
+                            items:
+                                _schools
+                                    .map(
+                                      (school) => DropdownMenuItem<String>(
+                                        value: school,
+                                        child: Text(school),
+                                      ),
+                                    )
+                                    .toList(),
+                            onChanged:
+                                (value) => setState(() => _selectedSchool = value),
+                          ),
                         ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide(color: Colors.blue[200]!),
+                        const SizedBox(width: 8),
+                        IconButton(
+                          tooltip: 'Edit selected school name',
+                          icon: Icon(Icons.edit, color: Colors.blue[800]),
+                          onPressed:
+                              _isLoading ? null : () => _showEditSchoolDialog(),
                         ),
-                        filled: true,
-                        fillColor: Colors.white,
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: OutlinedButton.icon(
+                        icon: const Icon(Icons.sync),
+                        label: const Text('Sync Schools'),
+                        onPressed:
+                            _isLoading ? null : () => _syncSchoolsFromStudents(),
                       ),
-                      items:
-                          _schools
-                              .map(
-                                (school) => DropdownMenuItem<String>(
-                                  value: school,
-                                  child: Text(school),
-                                ),
-                              )
-                              .toList(),
-                      onChanged:
-                          (value) => setState(() => _selectedSchool = value),
                     ),
                     const SizedBox(height: 12),
                     Row(
@@ -806,21 +972,26 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.grey[100],
-      body: SafeArea(
-        child:
-            _selectedIndex == 0
-                ? _buildMainScreen([])
-                : UnverifiedStudentsScreen(
-                  studentsCollection: _studentsCollection,
-                  searchQuery: _searchQuery,
-                  selectedSchool: _selectedSchool,
-                  selectedAge: _selectedAge,
-                  selectedGrade: _selectedGrade,
-                  onVerify: _verifyStudent,
-                  onDelete: _deleteStudent,
-                  onShowDetails: _showStudentDetails,
-                  onSnackBar: _showSnackBar,
-                ),
+      body: Stack(
+        children: [
+          SafeArea(
+            child:
+                _selectedIndex == 0
+                    ? _buildMainScreen([])
+                    : UnverifiedStudentsScreen(
+                      studentsCollection: _studentsCollection,
+                      searchQuery: _searchQuery,
+                      selectedSchool: _selectedSchool,
+                      selectedAge: _selectedAge,
+                      selectedGrade: _selectedGrade,
+                      onVerify: _verifyStudent,
+                      onDelete: _deleteStudent,
+                      onShowDetails: _showStudentDetails,
+                      onSnackBar: _showSnackBar,
+                    ),
+          ),
+          if (_isLoading) _buildLoadingOverlay(),
+        ],
       ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,
@@ -885,6 +1056,53 @@ class _DashboardScreenState extends State<DashboardScreen> {
       ),
     );
   }
+}
+
+Widget _buildLoadingOverlay() {
+  return AbsorbPointer(
+    absorbing: true,
+    child: Container(
+      color: Colors.black54,
+      child: Center(
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.2),
+                blurRadius: 12,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(
+                width: 48,
+                height: 48,
+                child: CircularProgressIndicator(
+                  strokeWidth: 5,
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Please wait...',
+                style: TextStyle(
+                  color: Colors.blue[800],
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
 }
 
 class UnverifiedStudentsScreen extends StatelessWidget {
